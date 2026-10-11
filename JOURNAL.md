@@ -40,3 +40,27 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 - [ ] Draw a block diagram of how everything connects
 - [ ] Start the schematic in KiCad
 
+
+**Time spent:** 4 hours
+### What I did
+- Drew the full schematic in KiCad: USB-C power input with polyfuse + TVS protection,
+  connectors to the Sunton board, SHT40/BH1750/LD2410C sensor sockets, buzzer driver
+- Assigned footprints (0805 passives, SOT-23 transistor, PicoBlade connectors)
+- Laid out a ~60×45mm 2-layer PCB with 4 M3 mounting holes
+- Routed power on the front layer (0.8mm) and signals on the back (0.3mm)
+- Added GND fills on both layers + stitching vias
+- Fixed all DRC errors → **0 errors**
+- Exported Gerbers and got a JLCPCB quote
+
+### Problems I solved
+- Shield pad and a ground island weren't connected → added stitching vias
+- Traces too wide for USB-C pads → used 0.4mm near the connector
+
+### Images
+![Schematic](images/schematic.png)
+![PCB 3D front](images/pcb-3d-front.png)
+
+### Next steps
+- [ ] Design the enclosure
+- [ ] Start the ESPHome firmware
+
