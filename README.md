@@ -1,8 +1,8 @@
 # HomeDeck
 
 **A 7" desk touchscreen for Home Assistant that shows your home at a glance and wakes up when you walk over.**
+<img width="1200" height="800" alt="image" src="https://github.com/user-attachments/assets/86897348-447b-48dc-ac6a-51900d919659" />
 
-![HomeDeck concept](images/homedeck-concept.png)
 
 ## What is HomeDeck?
 
@@ -44,8 +44,6 @@ I also wanted a project that would teach me real hardware skills: drawing a sche
 
 ## How it works
 
-![Block diagram](images/block-diagram.png)
-
 The Sunton board's ESP32-S3 drives the display and runs ESPHome with an LVGL interface. The display uses almost every GPIO, so my add-on PCB connects through the few left on the board's expansion headers:
 
 | Signal | Part | ESP32 pin | Header |
@@ -64,9 +62,8 @@ Designed in KiCad: a ~60 × 45 mm two-layer board with power traces on the front
 
 **Power input:** USB-C (5.1 kΩ CC resistors) → 2 A polyfuse → SMAJ5.0CA TVS diode → 10 µF + 100 nF decoupling.
 
-<!-- 📸 Upload your own screenshots from KiCad with these names -->
-![Schematic](images/schematic.png)
-![PCB 3D view](images/pcb-3d.png)
+<img width="751" height="582" alt="image" src="https://github.com/user-attachments/assets/cf73ffb1-b691-4b8e-9d77-4d6d3f266f41" />
+<img width="926" height="642" alt="image" src="https://github.com/user-attachments/assets/1746f53a-ca06-4d8a-ae76-c0612a7187e0" />
 
 ---
 
@@ -79,9 +76,12 @@ Modelled in Fusion 360 as four 3D-printed parts:
 3. **Base** (190 × 120 × 24 mm) holds the display at 20°, with space for the PCB inside
 4. **Bottom plate** mounts the add-on PCB on standoffs and has rubber feet underneath
 
-<!-- 📸 Swap in screenshots from your own Fusion model -->
-![Enclosure renders](images/enclosure-render.png)
-![Dimensioned drawing](images/homedeck-drawing.png)
+<img width="1187" height="650" alt="image" src="https://github.com/user-attachments/assets/22c62446-e304-473a-a2d2-8882ae5dc1ef" />
+<img width="1029" height="582" alt="image" src="https://github.com/user-attachments/assets/7f7fa2cd-6b7c-4f8f-86b6-ad2c9f27993c" />
+<img width="919" height="752" alt="image" src="https://github.com/user-attachments/assets/35ecc35f-866f-48b0-a4f9-901a6cc68d96" />
+<img width="1094" height="670" alt="image" src="https://github.com/user-attachments/assets/2a7e2eb2-e8d9-4431-ae22-f776afd30ea0" />
+
+
 
 > Screen-related sizes are estimates and will be checked against the real Sunton board before the final print.
 
