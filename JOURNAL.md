@@ -98,9 +98,9 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 
 ### Images
 <img width="919" height="752" alt="image" src="https://github.com/user-attachments/assets/5c7cca06-68ca-4e6c-9f07-6cdbe8f743c0" />
-<img width="919" height="752" alt="image" src="https://github.com/user-attachments/assets/bb384387-c8be-44d2-95fd-e9c94ef9b91d" />
 <img width="1187" height="650" alt="image" src="https://github.com/user-attachments/assets/6abb21cc-d88c-4f9c-b70d-3d7821796fa4" />
 <img width="1029" height="582" alt="image" src="https://github.com/user-attachments/assets/e065960d-c555-4947-9e3d-76a86c7e45ab" />
+<img width="1094" height="670" alt="image" src="https://github.com/user-attachments/assets/cf1e5bd7-0ed8-48b5-9a09-4c50d9c59a1a" />
 
 
 ### Still to check
