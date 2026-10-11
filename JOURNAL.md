@@ -9,8 +9,8 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 
 ### What I did
 - Brainstormed project ideas for Hack Club Forge 
-- Picked a **Home Assistant touchscreen panel** because it can both control my home *and* show info
-- e.g. <img width="1200" height="800" alt="image" src="https://github.com/user-attachments/assets/2bfd98c3-86c5-40f5-9f36-f890e5abd4cb" />
+- Picked a **Home Assistant touchscreen panel** because it can both control my home *and* show info. Example:
+  <img width="1200" height="800" alt="image" src="https://github.com/user-attachments/assets/2bfd98c3-86c5-40f5-9f36-f890e5abd4cb" />
 
 
 - First planned a 5" screen, then upgraded to **7"** for more room for controls. 7" is the biggest an ESP32-S3 can drive smoothly
