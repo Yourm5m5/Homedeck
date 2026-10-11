@@ -5,7 +5,7 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 ---
 
 ## Day 1 – 11 Oct 2026
-**Time spent:** ~2 hours
+**Time spent:** ~6 hours
 
 ### What I did
 - Brainstormed project ideas for Hack Club Forge 
@@ -40,9 +40,7 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 - [ ] Draw a block diagram of how everything connects
 - [ ] Start the schematic in KiCad
 
-
-**Time spent:** 4 hours
-### What I did
+### What I did after
 - Drew the full schematic in KiCad: USB-C power input with polyfuse + TVS protection,
   connectors to the Sunton board, SHT40/BH1750/LD2410C sensor sockets, buzzer driver
 - Assigned footprints (0805 passives, SOT-23 transistor, PicoBlade connectors)
@@ -57,8 +55,9 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 - Traces too wide for USB-C pads → used 0.4mm near the connector
 
 ### Images
-![Schematic](images/schematic.png)
-![PCB 3D front](images/pcb-3d-front.png)
+<img width="751" height="582" alt="image" src="https://github.com/user-attachments/assets/affa4fef-e9bd-4bb2-88fc-ff88256ee825" />
+<img width="926" height="642" alt="image" src="https://github.com/user-attachments/assets/6ac5a209-c20e-4dc8-af7a-8a767a69103a" />
+
 
 ### Next steps
 - [ ] Design the enclosure
