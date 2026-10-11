@@ -64,7 +64,7 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 - [ ] Start the ESPHome firmware
 
 ## Day 2 – 12 Oct 2026: Enclosure CAD (Fusion 360)
-**Time spent:** 10 hours (all-nighter 😅)
+**Time spent:** 10 hours (All-nighter. I was bored)
 
 ### What I did
 - Designed the full HomeDeck desk-stand enclosure in Fusion 360
@@ -97,6 +97,10 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 - [anything that broke or you had to redo]
 
 ### Images
+<img width="919" height="752" alt="image" src="https://github.com/user-attachments/assets/5c7cca06-68ca-4e6c-9f07-6cdbe8f743c0" />
+<img width="919" height="752" alt="image" src="https://github.com/user-attachments/assets/bb384387-c8be-44d2-95fd-e9c94ef9b91d" />
+<img width="1187" height="650" alt="image" src="https://github.com/user-attachments/assets/6abb21cc-d88c-4f9c-b70d-3d7821796fa4" />
+<img width="1029" height="582" alt="image" src="https://github.com/user-attachments/assets/e065960d-c555-4947-9e3d-76a86c7e45ab" />
 
 
 ### Still to check
