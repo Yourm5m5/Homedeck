@@ -63,3 +63,46 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 - [ ] Design the enclosure
 - [ ] Start the ESPHome firmware
 
+## Day 2 – 12 Oct 2026: Enclosure CAD (Fusion 360)
+**Time spent:** 10 hours (all-nighter 😅)
+
+### What I did
+- Designed the full HomeDeck desk-stand enclosure in Fusion 360
+- Started from a concept sketch + a dimensioned reference drawing (made with AI help),
+  then modelled every part myself in Fusion
+- Set up **user parameters** for the screen size, so I can update everything
+  once I measure the real Sunton board
+- Modelled 4 parts:
+  1. **Front bezel**: screen pocket with a 2 mm lip, 155 × 88 viewing window,
+     26 × 6 sensor window for the light + mmWave sensors, M3 screw bosses
+  2. **Back shell**: vent slots so the SHT40 reads room air instead of screen heat,
+     cable exit at the bottom, counterbored screw holes
+  3. **Base**: 190 × 120 × 24 mm with a slot that holds the display at a **20° tilt**,
+     hollow underneath for the add-on PCB, cable tunnel, USB-C cutout at the back
+  4. **Bottom plate**: 4 standoffs for the add-on PCB, screws into the base, rubber-foot recesses
+- Put it all together in an assembly to check everything fits
+
+### Decisions
+| Decision | Why |
+|---|---|
+| Desk stand instead of wall mount | Easier to set up, no wall drilling, can move it around |
+| 20° tilt | Comfortable to read and tap from a desk |
+| PCB in the base | Keeps weight low so it doesn't tip when tapping the screen |
+| Heat-set inserts for all screws | Stronger than screwing into plastic, can open it many times |
+| Parametric design | Real screen sizes are still unknown, so this makes changes quick |
+
+### Problems / what I learned
+- [e.g. the tilted slot was tricky. Had to sketch on an angled plane]
+- [e.g. learned how to use Shell, Fillet and Joints in Fusion]
+- [anything that broke or you had to redo]
+
+### Images
+
+
+### Still to check
+- Screen sizes are placeholders: confirm against the real Sunton board
+- Line up the base's USB-C hole with J1 on the add-on PCB
+
+### Next steps
+- [ ] Start the ESPHome firmware + dashboard UI
+- [ ] Finish the Forge submission write-up
