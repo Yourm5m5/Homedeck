@@ -10,6 +10,8 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 ### What I did
 - Brainstormed project ideas for Hack Club Forge 
 - Picked a **Home Assistant touchscreen panel** because it can both control my home *and* show info
+- e.g. ![Uploading image.png…]()
+
 - First planned a 5" screen, then upgraded to **7"** for more room for controls. 7" is the biggest an ESP32-S3 can drive smoothly
 - Chose the **Sunton ESP32-8048S070C** (7" 800×480, capacitive touch) as the main board
 - Planned a custom add-on PCB with:
