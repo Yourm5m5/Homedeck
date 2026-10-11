@@ -36,4 +36,4 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 - [ ] Find the Sunton board pinout
 - [ ] Draw a block diagram of how everything connects
 - [ ] Start the schematic in KiCad
-- [ ] Order the parts
+
