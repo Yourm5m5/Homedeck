@@ -108,5 +108,4 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 - Line up the base's USB-C hole with J1 on the add-on PCB
 
 ### Next steps
-- [ ] Start the ESPHome firmware + dashboard UI
-- [ ] Finish the Forge submission write-up
+- [ ] Start the ESPHome firmware + dashboard UI - I will start the code once I have the PCB 
