@@ -130,6 +130,7 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 
 ### Images
 
+<img width="491" height="917" alt="image" src="https://github.com/user-attachments/assets/95591eff-448a-4e0f-a463-9a37502ce569" /> - NOT ALL THE CODE 
 
 ### Still to check
 - Verify LVGL syntax for custom widgets and button callbacks against the latest ESPHome documentation
