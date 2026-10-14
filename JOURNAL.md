@@ -109,3 +109,31 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 
 ### Next steps
 - [ ] Start the ESPHome firmware + dashboard UI - I will start the code once I have the PCB 
+
+## Day 3 – 14 Oct 2026: ESPHome Firmware & LVGL UI Setup
+**Time spent:** 2
+
+### What I did
+- Wrote the initial ESPHome YAML configuration file (homedeck.yaml) for the Sunton ESP32-S3 board
+- Mapped out the multi-page dashboard UI layout on paper (organizing lighting controls, weather cards, climate widgets, and energy monitoring graphs
+- Double-checked pin mappings and component declarations in the code against the Sunton board schematic to ensure everything is ready to flash once hardware arrives
+
+
+### Decisions
+| Decision | Why |
+|---|---|
+| Focus entirely on software preparation | Since no physical components or the custom PCB have arrived yet, working on the codebase keeps the project moving forward |
+| Pre-planning UI pages in code | Writing the LVGL structure ahead of time means less troubleshooting on the bench when the screen finally arrives |
+
+### Problems / what I learned
+- Writing and dry-running firmware logic beforehand helps catch potential syntax or component mapping errors early.
+
+### Images
+
+
+### Still to check
+- Verify LVGL syntax for custom widgets and button callbacks against the latest ESPHome documentation
+- Plan out Home Assistant automation triggers for the buzzer alerts and screen wake states
+
+### Next steps
+- [ ] Continue polishing the ESPHome dashboard code and UI widgets
