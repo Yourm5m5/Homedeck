@@ -111,7 +111,7 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 - [ ] Start the ESPHome firmware + dashboard UI - I will start the code once I have the PCB 
 
 ## Day 3 – 14 Oct 2026: ESPHome Firmware & LVGL UI Setup
-**Time spent:** 2
+**Time spent:** 2 hours
 
 ### What I did
 - Wrote the initial ESPHome YAML configuration file (homedeck.yaml) for the Sunton ESP32-S3 board
