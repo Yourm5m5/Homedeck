@@ -110,31 +110,45 @@ A 7" wall-mounted Home Assistant touchscreen that shows my home at a glance and 
 ### Next steps
 - [ ] Start the ESPHome firmware + dashboard UI - I will start the code once I have the PCB 
 
-## Day 3 – 14 Oct 2026: ESPHome Firmware & LVGL UI Setup
-**Time spent:** 2 hours
+## Day 3 – 13/10/2026: Firmware (ESPHome + LVGL)
+Time spent: ~5 hours
 
-### What I did
-- Wrote the initial ESPHome YAML configuration file (homedeck.yaml) for the Sunton ESP32-S3 board
-- Mapped out the multi-page dashboard UI layout on paper (organizing lighting controls, weather cards, climate widgets, and energy monitoring graphs
-- Double-checked pin mappings and component declarations in the code against the Sunton board schematic to ensure everything is ready to flash once hardware arrives
+What I did
+- Wrote the HomeDeck firmware as one ESPHome YAML file
+- Set up the Sunton board's 7" RGB display (800x480) and GT911 touchscreen
+- Built 4 dashboard pages with LVGL and a nav bar at the bottom:
+  - Home: big clock, date, outdoor weather, room temp and humidity
+  - Rooms: tap tiles to toggle lights and the fan; tiles turn yellow when on
+    and stay in sync with Home Assistant
+  - Climate: drag a dial to set the air-con temperature
+  - Media: now playing, prev / play-pause / next, volume slider
+- Added my add-on PCB sensors:
+  - SHT40: room temperature and humidity, sent to Home Assistant
+  - BH1750: auto-brightness (dim at night, bright in daylight)
+  - LD2410C: screen wakes when someone walks up, turns off 45 s after they leave
+  - Buzzer: click on button presses, plus a "play_tone" action for doorbell alerts
+
+Decisions
+- ESPHome instead of Arduino: it connects to Home Assistant natively and the
+  LVGL UI can be written in YAML
+- Used the LD2410C's OUT pin (GPIO17) to wake the screen because it's instant;
+  the UART data still goes to Home Assistant as a presence sensor
+- Turned off serial logging because the LD2410C uses UART0 (GPIO43/44), so
+  updates happen over Wi-Fi (OTA) after the first flash
+
+Problems / what I learned
+- The display needs exact RGB timing values (porches, pulse widths, pixel clock)
+- Learned how LVGL pages, styles and flex layouts work
+- Had to allow the device to perform Home Assistant actions before the buttons worked
+
+<img width="891" height="951" alt="image" src="https://github.com/user-attachments/assets/1a22bd5d-e5cb-40cf-a8e2-63839750e590" />
 
 
-### Decisions
-| Decision | Why |
-|---|---|
-| Focus entirely on software preparation | Since no physical components or the custom PCB have arrived yet, working on the codebase keeps the project moving forward |
-| Pre-planning UI pages in code | Writing the LVGL structure ahead of time means less troubleshooting on the bench when the screen finally arrives |
+Still to test (once parts arrive)
+- Display timings on the real board
+- LD2410C sensitivity and the 45 s sleep timer
+- Auto-brightness range
 
-### Problems / what I learned
-- Writing and dry-running firmware logic beforehand helps catch potential syntax or component mapping errors early.
-
-### Images
-
-<img width="491" height="917" alt="image" src="https://github.com/user-attachments/assets/95591eff-448a-4e0f-a463-9a37502ce569" /> - NOT ALL THE CODE 
-
-### Still to check
-- Verify LVGL syntax for custom widgets and button callbacks against the latest ESPHome documentation
-- Plan out Home Assistant automation triggers for the buzzer alerts and screen wake states
-
-### Next steps
-- [ ] Continue polishing the ESPHome dashboard code and UI widgets
+Next steps
+- [ ] Flash and test on the real board
+- [ ] Tune the UI colours and layout
