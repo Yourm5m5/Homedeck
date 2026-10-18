@@ -1,7 +1,5 @@
 # HomeDeck Enclosure: Assembly Guide
 
-![Exploded view](images/homedeck-exploded.png)
-
 The numbers below match the labels in the exploded view.
 
 ## Parts
