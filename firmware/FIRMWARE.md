@@ -2,8 +2,6 @@
 
 This explains how `homedeck.yaml` works: what each part does, how the sensors are wired up and processed, and how the touchscreen UI talks to Home Assistant.
 
-**Stack:** [ESPHome](https://esphome.io) (YAML firmware for ESP32) + [LVGL](https://lvgl.io) (the graphics library ESPHome uses for touch UIs) + [Home Assistant](https://www.home-assistant.io).
-
 ---
 
 ## Contents
