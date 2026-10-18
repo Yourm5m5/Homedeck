@@ -2,6 +2,8 @@
 
 This explains how `homedeck.yaml` works: what each part does, how the sensors are wired up and processed, and how the touchscreen UI talks to Home Assistant.
 
+**Stack:** [ESPHome](https://esphome.io) (YAML firmware for ESP32) + [LVGL](https://lvgl.io) (the graphics library ESPHome uses for touch UIs) + [Home Assistant](https://www.home-assistant.io).
+
 ---
 
 ## Contents
@@ -30,27 +32,27 @@ This explains how `homedeck.yaml` works: what each part does, how the sensors ar
 ```mermaid
 flowchart LR
     subgraph AddOn["Add-on PCB"]
-        SHT[SHT40<br/>temp + humidity]
-        BH[BH1750<br/>light]
-        LD[LD2410C<br/>presence]
-        BZ[Buzzer]
+        SHT["SHT40 - temp and humidity"]
+        BH["BH1750 - light"]
+        LD["LD2410C - presence"]
+        BZ["Buzzer"]
     end
     subgraph Sunton["Sunton ESP32-S3 board"]
-        ESP[ESPHome firmware]
-        LV[LVGL UI]
-        LCD[7&quot; LCD + backlight]
-        TP[GT911 touch]
+        ESP["ESPHome firmware"]
+        LV["LVGL UI"]
+        LCD["7-inch LCD and backlight"]
+        TP["GT911 touch"]
     end
-    HA[(Home Assistant)]
+    HA[("Home Assistant")]
 
-    SHT -- I2C --> ESP
-    BH -- I2C --> ESP
-    LD -- UART + OUT pin --> ESP
-    ESP -- PWM --> BZ
-    TP -- I2C --> ESP
+    SHT -->|I2C| ESP
+    BH -->|I2C| ESP
+    LD -->|UART and OUT pin| ESP
+    ESP -->|PWM| BZ
+    TP -->|I2C| ESP
     ESP <--> LV
     LV --> LCD
-    ESP <== Wi-Fi native API ==> HA
+    ESP <-->|Wi-Fi native API| HA
 ```
 
 The firmware does four jobs:
@@ -95,9 +97,9 @@ Every sensor follows the same path:
 
 ```mermaid
 flowchart LR
-    A[Hardware reading] --> B[ESPHome component] --> C[Filters] --> D{on_value}
-    D --> E[Published to Home Assistant]
-    D --> F[Updates the UI / triggers a script]
+    A["Hardware reading"] --> B["ESPHome component"] --> C["Filters"] --> D{"on_value"}
+    D --> E["Published to Home Assistant"]
+    D --> F["Updates the UI or triggers a script"]
 ```
 
 ### 3.1 SHT40 – temperature & humidity
@@ -195,9 +197,9 @@ data:
 ```mermaid
 stateDiagram-v2
     [*] --> Awake: boot
-    Awake --> Awake: touch / presence\n(restart idle timer)
-    Awake --> Asleep: timer expired\nAND radar says empty
-    Asleep --> Awake: presence (OUT pin HIGH)\nor touch\nor play_tone from HA
+    Awake --> Awake: touch or presence (restart idle timer)
+    Awake --> Asleep: timer expired AND radar says empty
+    Asleep --> Awake: presence, touch or play_tone from HA
     Awake: Backlight on at target_brightness
     Awake: LVGL running
     Asleep: Backlight off
