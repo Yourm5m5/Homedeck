@@ -139,6 +139,16 @@ All parts from **AliExpress** except the custom PCB, which comes from **JLCPCB**
 
 ---
 
+## Changes after review
+
+The first review asked for better firmware documentation and an exploded view. What changed:
+
+Firmware: commented every section of homedeck.yaml and wrote FIRMWARE.md, explaining each sensor (what it does, how it's read, how it's used) and how every LVGL element is wired to Home Assistant, with code snippets and diagrams
+Exploded view: built a full assembly in Fusion 360 with every component and screw, plus ASSEMBLY.md
+Design fix found along the way: the exploded view showed the radar and light sensor had nowhere to mount, so I added a sensor bay behind the top bezel (bezel 116 → 128 mm) and an SHT40 cradle with its own vents in the back shell
+
+---
+
 ## Acknowledgements
 
 - Sunton pinout info from [ESP3D](https://esp3d.io/esp3d-tft/version_1x/hardware/esp32-s3/sunton-70-8048/) and [Blakadder's templates](https://templates.blakadder.com/sunton_ESP32-8048S070.html)
