@@ -1,0 +1,962 @@
+# =============================================================================
+#  HomeDeck firmware  ·  ESPHome + LVGL
+# =============================================================================
+#  A 7" touchscreen panel for Home Assistant.
+#
+#  Hardware
+#    Main board : Sunton ESP32-8048S070C
+#                 ESP32-S3 (16 MB flash, 8 MB octal PSRAM)
+#                 7" 800x480 RGB-parallel LCD + GT911 capacitive touch
+#    Add-on PCB : HomeDeck add-on (KiCad, in /pcb)
+#                 SHT40   temperature + humidity   (I2C 0x44)
+#                 BH1750  ambient light            (I2C 0x23)
+#                 LD2410C 24 GHz mmWave presence   (UART + OUT pin)
+#                 Piezo buzzer via NPN transistor  (PWM)
+#
+#  Pin map (Sunton header -> add-on PCB)
+#    GPIO19 / GPIO20  I2C SDA / SCL  (P3)  shared with the GT911 touch chip
+#    GPIO43 / GPIO44  UART TX / RX   (P1)  to LD2410C RX / TX
+#    GPIO17           LD2410C OUT    (P4)  HIGH while someone is present
+#    GPIO18           Buzzer PWM     (P4)
+#    GPIO2            LCD backlight  (on the Sunton board)
+#    GPIO38           GT911 reset    (on the Sunton board)
+#
+#  File layout (top to bottom)
+#    1. Substitutions      – the only part most people need to edit
+#    2. Core               – chip, PSRAM, Wi-Fi, API, OTA, time
+#    3. Buses              – I2C and UART shared by several devices
+#    4. Display & touch    – RGB panel timings, GT911
+#    5. Outputs            – backlight PWM, buzzer PWM
+#    6. Sensors            – SHT40, BH1750, LD2410C, data pulled from HA
+#    7. Settings entities  – things you can change from Home Assistant
+#    8. Scripts            – wake/sleep state machine, auto-brightness, beep
+#    9. Intervals          – clock refresh
+#   10. LVGL UI            – styles, nav bar, 4 pages
+#
+#  How data moves (see FIRMWARE.md for diagrams)
+#    Sensor -> ESPHome entity -> Home Assistant      (room temp, lux, presence)
+#    Home Assistant -> homeassistant sensor -> LVGL  (weather, light states…)
+#    LVGL touch -> homeassistant.action -> HA        (toggle light, set temp…)
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# 1. SUBSTITUTIONS
+#    Replace these with the entity IDs from YOUR Home Assistant
+#    (Settings → Devices & Services → Entities). Everything else reads from here.
+# -----------------------------------------------------------------------------
+substitutions:
+  name: homedeck
+  friendly_name: HomeDeck
+
+  light_lounge: light.lounge
+  light_kitchen: light.kitchen
+  light_bedroom: light.bedroom
+  fan_bedroom: fan.bedroom
+  climate_ac: climate.living_room
+  media: media_player.lounge
+  weather: weather.home
+
+  # Tuning
+  sht40_temp_offset: "-1.5"   # °C. The panel warms itself; measure against a
+                              # reference thermometer and adjust (see FIRMWARE.md)
+  lux_full_brightness: "400"  # lux at which the backlight reaches 100 %
+
+
+# -----------------------------------------------------------------------------
+# 2. CORE
+# -----------------------------------------------------------------------------
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  on_boot:
+    # priority -100 = run after Wi-Fi, LVGL and all sensors are set up
+    priority: -100
+    then:
+      - script.execute: wake_screen
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: esp32s3
+  flash_size: 16MB
+  framework:
+    # The RGB display driver only exists for ESP-IDF, not Arduino
+    type: esp-idf
+    sdkconfig_options:
+      # 240 MHz + bigger cache + running code from PSRAM keeps the
+      # RGB panel fed without flicker while Wi-Fi is busy
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: y
+      CONFIG_ESP32S3_DATA_CACHE_64KB: y
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
+      CONFIG_SPIRAM_RODATA: y
+
+# 8 MB octal PSRAM holds the LVGL draw buffer (800x480 x 2 bytes x 25 %)
+psram:
+  mode: octal
+  speed: 80MHz
+
+# GPIO43/44 are UART0, the same pins the USB-serial chip uses for logs.
+# The LD2410C needs them, so serial logging is turned off.
+# Logs are still visible over Wi-Fi in the ESPHome dashboard.
+# Flash the first time over USB, then update over Wi-Fi (OTA).
+logger:
+  baud_rate: 0
+
+api:
+  encryption:
+    key: !secret api_key
+  # A custom action Home Assistant can call, e.g. from a doorbell automation:
+  #   action: esphome.homedeck_play_tone
+  #   data: { song: "ding:d=8,o=6,b=180:e,c" }
+  # The song is in RTTTL format (Nokia ringtone text).
+  actions:
+    - action: play_tone
+      variables:
+        song: string
+      then:
+        - script.execute: wake_screen
+        - rtttl.play: !lambda 'return song;'
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # If Wi-Fi fails, HomeDeck makes its own hotspot so you can fix the settings
+  ap:
+    ssid: "HomeDeck Fallback"
+
+captive_portal:
+
+# Clock comes from Home Assistant, so no RTC chip is needed
+time:
+  - platform: homeassistant
+    id: ha_time
+
+# Values that scripts share. Stored in RAM only.
+globals:
+  # Backlight level (0.0–1.0) that auto-brightness last calculated.
+  # wake_screen uses it so the screen comes back at the right level.
+  - id: target_brightness
+    type: float
+    initial_value: '0.8'
+
+
+# -----------------------------------------------------------------------------
+# 3. BUSES
+# -----------------------------------------------------------------------------
+# One I2C bus, three devices, no address clashes:
+#   0x5D (or 0x14)  GT911 touch   – on the Sunton board
+#   0x44            SHT40         – add-on PCB, socket J5
+#   0x23            BH1750        – add-on PCB, socket J6 (ADDR pin tied to GND)
+# The Sunton board already has I2C pull-ups, so R-pull-ups on the add-on PCB
+# are left unpopulated (DNP).
+i2c:
+  id: bus_a
+  sda: GPIO19
+  scl: GPIO20
+  scan: true          # prints found addresses in the log – handy for debugging
+  frequency: 100kHz   # safe for ~30 cm of jumper wire to the sensors
+
+# LD2410C talks at a fixed 256000 baud, 8N1.
+# Crossed over: ESP TX -> sensor RX, ESP RX <- sensor TX.
+uart:
+  id: ld_uart
+  tx_pin: GPIO43
+  rx_pin: GPIO44
+  baud_rate: 256000
+  parity: NONE
+  stop_bits: 1
+
+ld2410:
+  id: ld2410_radar
+  uart_id: ld_uart
+  # Seconds the radar keeps reporting "present" after the last movement.
+  # Short, because the screen has its own idle timer (see scripts).
+  timeout: 5s
+
+
+# -----------------------------------------------------------------------------
+# 4. DISPLAY & TOUCH
+# -----------------------------------------------------------------------------
+# The 7" panel is driven directly over a 16-bit RGB565 parallel bus.
+# Timings are the community-tested values for the ESP32-8048S070.
+# If the picture is shifted or flickers:
+#   - try pclk_inverted: false
+#   - or lower pclk_frequency to 12MHz
+display:
+  - platform: rpi_dpi_rgb
+    id: main_display
+    color_order: RGB
+    update_interval: never        # LVGL decides when to redraw, not a timer
+    auto_clear_enabled: false     # LVGL draws the full frame itself
+    dimensions:
+      width: 800
+      height: 480
+    de_pin: GPIO41
+    hsync_pin: GPIO39
+    vsync_pin: GPIO40
+    pclk_pin: GPIO42
+    pclk_frequency: 16MHz
+    pclk_inverted: true
+    hsync_pulse_width: 30
+    hsync_back_porch: 16
+    hsync_front_porch: 210
+    vsync_pulse_width: 13
+    vsync_back_porch: 10
+    vsync_front_porch: 22
+    data_pins:
+      red:   [GPIO14, GPIO21, GPIO47, GPIO48, GPIO45]
+      green: [GPIO9,  GPIO46, GPIO3,  GPIO8,  GPIO16, GPIO1]
+      blue:  [GPIO15, GPIO7,  GPIO6,  GPIO5,  GPIO4]
+
+# GT911 capacitive touch. Its interrupt pin isn't wired on this board
+# (GPIO18 is used for the buzzer instead), so it is polled.
+touchscreen:
+  - platform: gt911
+    id: touch
+    i2c_id: bus_a
+    reset_pin: GPIO38
+    # Any touch counts as activity: wake the screen and restart the idle timer.
+    # LVGL still receives the touch, so a tap on a sleeping screen both wakes
+    # it and presses whatever is under your finger. To avoid accidental
+    # presses, the first touch while asleep is swallowed – see wake_screen.
+    on_touch:
+      - script.execute: wake_screen
+
+
+# -----------------------------------------------------------------------------
+# 5. OUTPUTS
+# -----------------------------------------------------------------------------
+output:
+  # Backlight: PWM into the Sunton board's backlight driver.
+  # 1 kHz is above visible flicker and below the driver's limit.
+  - platform: ledc
+    id: backlight_pwm
+    pin: GPIO2
+    frequency: 1000Hz
+
+  # Buzzer: PWM into the NPN transistor on the add-on PCB.
+  # The rtttl component changes the frequency to play notes.
+  - platform: ledc
+    id: buzzer_out
+    pin: GPIO18
+
+# Exposed to Home Assistant as "Display Backlight", so an automation can
+# also dim the panel (e.g. at night).
+light:
+  - platform: monochromatic
+    id: backlight
+    name: "Display Backlight"
+    output: backlight_pwm
+    restore_mode: ALWAYS_ON
+    default_transition_length: 400ms   # smooth fade instead of a hard jump
+
+rtttl:
+  output: buzzer_out
+  gain: 60%            # duty cycle; lower = quieter
+
+
+# -----------------------------------------------------------------------------
+# 6. SENSORS
+# -----------------------------------------------------------------------------
+sensor:
+  # ---------------------------------------------------------------------------
+  # SHT40 – room temperature & humidity (add-on PCB, J5, I2C 0x44)
+  #   Mounted in the back shell next to the vent slots, away from the
+  #   LCD backlight, so it reads room air rather than panel heat.
+  #   The offset corrects the small amount of self-heating that is left.
+  # ---------------------------------------------------------------------------
+  - platform: sht4x
+    i2c_id: bus_a
+    update_interval: 30s
+    precision: High
+    heater_max_duty: 0.0        # internal heater off – it would skew readings
+    temperature:
+      id: room_temp
+      name: "Room Temperature"
+      filters:
+        - offset: ${sht40_temp_offset}
+        - sliding_window_moving_average:   # smooth out small jumps
+            window_size: 4
+            send_every: 1
+      on_value:
+        - script.execute: update_room_label
+    humidity:
+      id: room_hum
+      name: "Room Humidity"
+      filters:
+        - sliding_window_moving_average:
+            window_size: 4
+            send_every: 1
+      on_value:
+        - script.execute: update_room_label
+
+  # ---------------------------------------------------------------------------
+  # BH1750 – ambient light (add-on PCB, J6, I2C 0x23)
+  #   Sits behind the small window in the top bezel.
+  #   Read every 2 s, averaged over 5 readings (~10 s) so a passing shadow
+  #   doesn't make the backlight pump up and down.
+  # ---------------------------------------------------------------------------
+  - platform: bh1750
+    i2c_id: bus_a
+    id: room_lux
+    name: "Room Light"
+    update_interval: 2s
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
+    on_value:
+      - script.execute: auto_brightness
+
+  # ---------------------------------------------------------------------------
+  # LD2410C – extra radar data for Home Assistant (optional, nice for graphs)
+  # ---------------------------------------------------------------------------
+  - platform: ld2410
+    ld2410_id: ld2410_radar
+    detection_distance:
+      name: "Presence Distance"
+
+  # ---------------------------------------------------------------------------
+  # Values pulled FROM Home Assistant to show on the screen.
+  # Each one updates its LVGL widget as soon as HA sends a new value.
+  # ---------------------------------------------------------------------------
+  - platform: homeassistant
+    id: outside_temp
+    entity_id: ${weather}
+    attribute: temperature
+    on_value:
+      - lvgl.label.update:
+          id: lbl_weather_temp
+          text:
+            format: "%.0f°"
+            args: [ 'x' ]
+
+  # Air-con set-point. Keeps the dial in sync if the temperature is
+  # changed somewhere else (phone, remote…).
+  - platform: homeassistant
+    id: ac_setpoint
+    entity_id: ${climate_ac}
+    attribute: temperature
+    on_value:
+      - lvgl.arc.update:
+          id: arc_ac
+          value: !lambda 'return (int) x;'
+      - lvgl.label.update:
+          id: lbl_ac_set
+          text:
+            format: "%.0f°C"
+            args: [ 'x' ]
+
+  # Media volume (0.0–1.0 in HA) -> slider (0–100)
+  - platform: homeassistant
+    id: media_volume
+    entity_id: ${media}
+    attribute: volume_level
+    on_value:
+      - lvgl.slider.update:
+          id: sld_volume
+          value: !lambda 'return x * 100.0;'
+
+text_sensor:
+  # Weather condition comes as a code like "partlycloudy";
+  # turn it into readable text for the Home page.
+  - platform: homeassistant
+    id: weather_state
+    entity_id: ${weather}
+    on_value:
+      - lvgl.label.update:
+          id: lbl_weather_desc
+          text: !lambda |-
+            if (x == "partlycloudy") return std::string("Partly cloudy");
+            if (x == "clear-night")  return std::string("Clear");
+            if (x == "lightning-rainy") return std::string("Storms");
+            if (x == "snowy-rainy")  return std::string("Sleet");
+            std::string s = x;
+            if (!s.empty()) s[0] = toupper(s[0]);   // "sunny" -> "Sunny"
+            return s;
+
+  - platform: homeassistant
+    id: media_title
+    entity_id: ${media}
+    attribute: media_title
+    on_value:
+      - lvgl.label.update:
+          id: lbl_media_title
+          text: !lambda 'return x.empty() ? std::string("Nothing playing") : x;'
+
+binary_sensor:
+  # ---------------------------------------------------------------------------
+  # LD2410C presence – two signals from the same radar:
+  #
+  #  a) UART "has_target": full data, reported to Home Assistant for
+  #     automations (e.g. turn the room light off when nobody's there).
+  #  b) OUT pin (GPIO17): a plain HIGH/LOW wire. Reacts instantly, no
+  #     parsing, so it's what wakes the screen.
+  # ---------------------------------------------------------------------------
+  - platform: ld2410
+    ld2410_id: ld2410_radar
+    has_target:
+      id: presence_uart
+      name: "Presence"
+
+  - platform: gpio
+    id: presence_out
+    name: "Presence (OUT pin)"
+    pin: GPIO17
+    filters:
+      - delayed_off: 2s        # ignore very short drop-outs
+    on_press:
+      - script.execute: wake_screen
+    on_release:
+      - script.execute: idle_timer   # start the countdown to sleep
+
+  # ---------------------------------------------------------------------------
+  # Light / fan states FROM Home Assistant.
+  # These keep the Room tiles honest: if someone switches a light with the
+  # wall switch or phone, the tile on HomeDeck updates too.
+  # ---------------------------------------------------------------------------
+  - platform: homeassistant
+    id: ha_lounge
+    entity_id: ${light_lounge}
+    on_state:
+      - lvgl.widget.update:
+          id: btn_lounge
+          state:
+            checked: !lambda 'return x;'
+  - platform: homeassistant
+    id: ha_kitchen
+    entity_id: ${light_kitchen}
+    on_state:
+      - lvgl.widget.update:
+          id: btn_kitchen
+          state:
+            checked: !lambda 'return x;'
+  - platform: homeassistant
+    id: ha_bedroom
+    entity_id: ${light_bedroom}
+    on_state:
+      - lvgl.widget.update:
+          id: btn_bedroom
+          state:
+            checked: !lambda 'return x;'
+  - platform: homeassistant
+    id: ha_fan
+    entity_id: ${fan_bedroom}
+    on_state:
+      - lvgl.widget.update:
+          id: btn_fan
+          state:
+            checked: !lambda 'return x;'
+
+
+# -----------------------------------------------------------------------------
+# 7. SETTINGS ENTITIES (adjustable from Home Assistant, saved across reboots)
+# -----------------------------------------------------------------------------
+number:
+  - platform: template
+    id: screen_timeout
+    name: "Screen Timeout"
+    unit_of_measurement: s
+    min_value: 10
+    max_value: 600
+    step: 5
+    initial_value: 45
+    optimistic: true
+    restore_value: true
+
+  - platform: template
+    id: min_brightness
+    name: "Minimum Brightness"
+    unit_of_measurement: "%"
+    min_value: 5
+    max_value: 100
+    step: 5
+    initial_value: 15
+    optimistic: true
+    restore_value: true
+
+switch:
+  - platform: template
+    id: auto_brightness_enabled
+    name: "Auto Brightness"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      - script.execute: auto_brightness
+
+  - platform: template
+    id: sounds_enabled
+    name: "Button Sounds"
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+
+# -----------------------------------------------------------------------------
+# 8. SCRIPTS
+# -----------------------------------------------------------------------------
+# Screen state machine
+#
+#            presence / touch / HA action
+#   ┌────────┐ ─────────────────────────▶ ┌───────┐
+#   │ ASLEEP │                            │ AWAKE │──┐ any activity
+#   └────────┘ ◀───────────────────────── └───────┘◀─┘ restarts timer
+#     backlight off,   timeout expired AND
+#     LVGL paused      nobody present
+#
+# Why LVGL is paused while asleep: it stops redrawing the 800x480 frame,
+# which saves CPU and keeps Wi-Fi responsive. Sensors keep running.
+script:
+  - id: wake_screen
+    mode: restart       # calling it again just restarts it
+    then:
+      - if:
+          condition:
+            lvgl.is_paused:
+          then:
+            - lvgl.resume:
+            # Swallow the waking touch for 300 ms so it doesn't also
+            # press a button.
+            - lvgl.widget.disable: nav_bar
+            - delay: 300ms
+            - lvgl.widget.enable: nav_bar
+      - light.turn_on:
+          id: backlight
+          brightness: !lambda 'return id(target_brightness);'
+      - script.execute: idle_timer
+
+  - id: idle_timer
+    mode: restart       # every new activity resets the countdown
+    then:
+      - delay: !lambda 'return id(screen_timeout).state * 1000;'
+      - if:
+          condition:
+            # Only sleep if the radar also says the room is empty.
+            # Someone reading the screen without touching it keeps it on.
+            binary_sensor.is_off: presence_out
+          then:
+            - light.turn_off: backlight
+            - lvgl.pause:
+
+  # Auto-brightness
+  #   brightness = min + lux / lux_full_brightness, clamped to [min, 1.0]
+  #   e.g. min 15 %:   0 lux -> 15 %,  200 lux -> 65 %,  400+ lux -> 100 %
+  # The result is stored in target_brightness. It's only applied straight
+  # away if the screen is on; otherwise wake_screen uses it later.
+  - id: auto_brightness
+    mode: queued
+    then:
+      - if:
+          condition:
+            switch.is_on: auto_brightness_enabled
+          then:
+            - lambda: |-
+                float lo = id(min_brightness).state / 100.0f;
+                float b  = lo + id(room_lux).state / ${lux_full_brightness}.0f;
+                id(target_brightness) = std::max(lo, std::min(1.0f, b));
+            - if:
+                condition:
+                  light.is_on: backlight
+                then:
+                  - light.turn_on:
+                      id: backlight
+                      brightness: !lambda 'return id(target_brightness);'
+
+  # Writes "Room 22.4°C · 48%" on the Home page. Called by both the
+  # temperature and humidity sensors, so whichever updates first is shown.
+  - id: update_room_label
+    then:
+      - lvgl.label.update:
+          id: lbl_room
+          text: !lambda |-
+            char buf[48];
+            if (isnan(id(room_temp).state)) return std::string("Room  --");
+            snprintf(buf, sizeof(buf), "Room  %.1f°C  ·  %.0f%%",
+                     id(room_temp).state, id(room_hum).state);
+            return std::string(buf);
+
+  # Short tick when a button is pressed (unless sounds are turned off)
+  - id: click
+    then:
+      - if:
+          condition:
+            switch.is_on: sounds_enabled
+          then:
+            - rtttl.play: "click:d=32,o=6,b=250:c"
+
+
+# -----------------------------------------------------------------------------
+# 9. INTERVALS
+# -----------------------------------------------------------------------------
+# Clock refresh. Every 10 s is enough for HH:MM; it only redraws a label,
+# so it's cheap. Skipped until Home Assistant has sent the time.
+interval:
+  - interval: 10s
+    then:
+      - if:
+          condition:
+            time.has_time:
+          then:
+            - lvgl.label.update:
+                id: lbl_time
+                text: !lambda 'return id(ha_time).now().strftime("%H:%M");'
+            - lvgl.label.update:
+                id: lbl_date
+                text: !lambda 'return id(ha_time).now().strftime("%A, %d %B");'
+
+
+# -----------------------------------------------------------------------------
+# 10. LVGL UI
+# -----------------------------------------------------------------------------
+# Screen layout (800 x 480):
+#
+#   ┌──────────────────────────────────────────────┐  y = 0
+#   │                                              │
+#   │           current page (410 px tall)         │
+#   │      Home · Rooms · Climate · Media          │
+#   │                                              │
+#   ├──────────────────────────────────────────────┤  y = 410
+#   │  [Home]   [Rooms]   [Climate]   [Media]      │  nav bar (top_layer)
+#   └──────────────────────────────────────────────┘  y = 480
+#
+# - Pages are full-screen; only one is shown at a time (lvgl.page.show).
+# - The nav bar lives on the TOP LAYER, which LVGL draws above every page,
+#   so it is defined once instead of on each page.
+# - Colours: dark background, light text, yellow = light on, teal = fan on.
+lvgl:
+  displays: [main_display]
+  touchscreens: [touch]
+  buffer_size: 25%          # 25 % of a frame in PSRAM; LVGL redraws in strips
+  bg_color: 0x0F1726
+
+  # Re-usable styles, like CSS classes
+  style_definitions:
+    - id: tile              # Room tiles + media buttons
+      bg_color: 0x1F2B44
+      radius: 16
+      border_width: 0
+      text_color: 0xEEF2F7
+      pad_all: 14
+    - id: navbtn            # Bottom nav buttons
+      bg_color: 0x1F2B44
+      radius: 12
+      border_width: 0
+      text_color: 0xEEF2F7
+
+  # ---------------- Nav bar (always visible) ----------------
+  top_layer:
+    widgets:
+      - obj:
+          id: nav_bar
+          align: BOTTOM_MID
+          width: 100%
+          height: 70
+          bg_color: 0x0B111C
+          border_width: 0
+          radius: 0
+          pad_all: 8
+          # Flex row = the 4 buttons space themselves out evenly,
+          # no x/y maths needed
+          layout:
+            type: flex
+            flex_flow: row
+            flex_align_main: space_evenly
+            flex_align_cross: center
+          widgets:
+            - button:
+                styles: navbtn
+                width: 170
+                height: 52
+                on_click:
+                  - lvgl.page.show: page_home
+                widgets:
+                  - label: { text: "Home", align: CENTER }
+            - button:
+                styles: navbtn
+                width: 170
+                height: 52
+                on_click:
+                  - lvgl.page.show: page_rooms
+                widgets:
+                  - label: { text: "Rooms", align: CENTER }
+            - button:
+                styles: navbtn
+                width: 170
+                height: 52
+                on_click:
+                  - lvgl.page.show: page_climate
+                widgets:
+                  - label: { text: "Climate", align: CENTER }
+            - button:
+                styles: navbtn
+                width: 170
+                height: 52
+                on_click:
+                  - lvgl.page.show: page_media
+                widgets:
+                  - label: { text: "Media", align: CENTER }
+
+  pages:
+    # =========================================================
+    # PAGE 1 – HOME  (read-only: clock, weather, room climate)
+    #   lbl_time / lbl_date      <- interval (section 9)
+    #   lbl_weather_temp / desc  <- homeassistant weather sensors
+    #   lbl_room                 <- SHT40 via update_room_label
+    # =========================================================
+    - id: page_home
+      widgets:
+        - label:
+            id: lbl_time
+            x: 40
+            y: 40
+            text: "--:--"
+            text_font: montserrat_48
+            text_color: 0xEEF2F7
+        - label:
+            id: lbl_date
+            x: 44
+            y: 110
+            text: ""
+            text_font: montserrat_20
+            text_color: 0x8EA0BD
+        - label:
+            id: lbl_weather_temp
+            x: 600
+            y: 40
+            text: "--°"
+            text_font: montserrat_48
+            text_color: 0xFFD166
+        - label:
+            id: lbl_weather_desc
+            x: 604
+            y: 110
+            text: ""
+            text_font: montserrat_20
+            text_color: 0x8EA0BD
+        - label:
+            id: lbl_room
+            x: 44
+            y: 200
+            text: "Room  --"
+            text_font: montserrat_24
+            text_color: 0xEEF2F7
+
+    # =========================================================
+    # PAGE 2 – ROOMS  (2x2 grid of toggle tiles)
+    #
+    # Each tile is a CHECKABLE button: "checked" = device on.
+    #   Tap  -> click sound -> homeassistant.action toggle
+    #   HA   -> binary_sensor on_state -> lvgl.widget.update checked
+    # The tile changes colour only when HA confirms the new state, so the
+    # screen always shows the real state, even if the action fails.
+    # =========================================================
+    - id: page_rooms
+      widgets:
+        - obj:
+            x: 20
+            y: 20
+            width: 760
+            height: 370
+            bg_opa: TRANSP
+            border_width: 0
+            layout:
+              type: flex
+              flex_flow: row_wrap      # 2 tiles per row, wraps to a 2nd row
+              flex_align_main: space_evenly
+              pad_row: 18
+            widgets:
+              - button:
+                  id: btn_lounge
+                  styles: tile
+                  checkable: true
+                  width: 350
+                  height: 160
+                  checked:             # style used while the light is on
+                    bg_color: 0xF6B73C
+                    text_color: 0x2A1D00
+                  on_click:
+                    - script.execute: click
+                    - homeassistant.action:
+                        action: light.toggle
+                        data:
+                          entity_id: ${light_lounge}
+                  widgets:
+                    - label: { text: "Lounge", align: TOP_LEFT, text_font: montserrat_24 }
+              - button:
+                  id: btn_kitchen
+                  styles: tile
+                  checkable: true
+                  width: 350
+                  height: 160
+                  checked:
+                    bg_color: 0xF6B73C
+                    text_color: 0x2A1D00
+                  on_click:
+                    - script.execute: click
+                    - homeassistant.action:
+                        action: light.toggle
+                        data:
+                          entity_id: ${light_kitchen}
+                  widgets:
+                    - label: { text: "Kitchen", align: TOP_LEFT, text_font: montserrat_24 }
+              - button:
+                  id: btn_bedroom
+                  styles: tile
+                  checkable: true
+                  width: 350
+                  height: 160
+                  checked:
+                    bg_color: 0xF6B73C
+                    text_color: 0x2A1D00
+                  on_click:
+                    - script.execute: click
+                    - homeassistant.action:
+                        action: light.toggle
+                        data:
+                          entity_id: ${light_bedroom}
+                  widgets:
+                    - label: { text: "Bedroom", align: TOP_LEFT, text_font: montserrat_24 }
+              - button:
+                  id: btn_fan
+                  styles: tile
+                  checkable: true
+                  width: 350
+                  height: 160
+                  checked:
+                    bg_color: 0x2A9D8F
+                  on_click:
+                    - script.execute: click
+                    - homeassistant.action:
+                        action: fan.toggle
+                        data:
+                          entity_id: ${fan_bedroom}
+                  widgets:
+                    - label: { text: "Fan", align: TOP_LEFT, text_font: montserrat_24 }
+
+    # =========================================================
+    # PAGE 3 – CLIMATE  (air-con set-point dial)
+    #
+    #   Dragging the arc  -> on_value  updates the big number live
+    #   Letting go        -> on_release sends ONE climate.set_temperature
+    #                        (not one per degree while dragging)
+    #   HA changes it     -> ac_setpoint sensor moves the arc + number
+    # =========================================================
+    - id: page_climate
+      widgets:
+        - arc:
+            id: arc_ac
+            align: CENTER
+            y: -30
+            width: 300
+            height: 300
+            min_value: 16
+            max_value: 30
+            value: 22
+            adjustable: true
+            on_value:
+              - lvgl.label.update:
+                  id: lbl_ac_set
+                  text:
+                    format: "%d°C"
+                    args: [ 'x' ]
+            on_release:
+              - script.execute: click
+              - homeassistant.action:
+                  action: climate.set_temperature
+                  data:
+                    entity_id: ${climate_ac}
+                    temperature: !lambda 'return x;'
+        - label:
+            id: lbl_ac_set
+            align: CENTER
+            y: -30
+            text: "22°C"
+            text_font: montserrat_48
+            text_color: 0xEEF2F7
+        - label:
+            align: CENTER
+            y: 40
+            text: "Air-con set-point"
+            text_color: 0x8EA0BD
+
+    # =========================================================
+    # PAGE 4 – MEDIA  (title, transport buttons, volume)
+    #   lbl_media_title <- media_title text sensor
+    #   sld_volume      <- media_volume sensor; on_release -> volume_set
+    #   Icons use LVGL's built-in symbol font ( = prev, etc.)
+    # =========================================================
+    - id: page_media
+      widgets:
+        - label:
+            id: lbl_media_title
+            align: TOP_MID
+            y: 60
+            width: 700
+            long_mode: dot            # long titles end in "…"
+            text_align: CENTER
+            text: "Nothing playing"
+            text_font: montserrat_28
+            text_color: 0xEEF2F7
+        - obj:
+            align: CENTER
+            y: -10
+            width: 520
+            height: 110
+            bg_opa: TRANSP
+            border_width: 0
+            layout:
+              type: flex
+              flex_flow: row
+              flex_align_main: space_evenly
+              flex_align_cross: center
+            widgets:
+              - button:
+                  styles: tile
+                  width: 120
+                  height: 90
+                  on_click:
+                    - script.execute: click
+                    - homeassistant.action:
+                        action: media_player.media_previous_track
+                        data: { entity_id: "${media}" }
+                  widgets:
+                    - label: { text: "", align: CENTER, text_font: montserrat_28 }
+              - button:
+                  styles: tile
+                  width: 140
+                  height: 90
+                  on_click:
+                    - script.execute: click
+                    - homeassistant.action:
+                        action: media_player.media_play_pause
+                        data: { entity_id: "${media}" }
+                  widgets:
+                    - label: { text: "", align: CENTER, text_font: montserrat_28 }
+              - button:
+                  styles: tile
+                  width: 120
+                  height: 90
+                  on_click:
+                    - script.execute: click
+                    - homeassistant.action:
+                        action: media_player.media_next_track
+                        data: { entity_id: "${media}" }
+                  widgets:
+                    - label: { text: "", align: CENTER, text_font: montserrat_28 }
+        - slider:
+            id: sld_volume
+            align: CENTER
+            y: 110
+            width: 500
+            min_value: 0
+            max_value: 100
+            value: 40
+            on_release:
+              - homeassistant.action:
+                  action: media_player.volume_set
+                  data:
+                    entity_id: ${media}
+                    volume_level: !lambda 'return x / 100.0;'
